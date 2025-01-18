@@ -1,0 +1,210 @@
+import pygame
+import time
+import sys
+import random
+import pandas as pd
+import json
+from matplotlib import pyplot as plt
+
+# Initialize Pygame and Fonts
+pygame.init()
+pygame.font.init()
+
+# Constants
+WIDTH, HEIGHT = 1000, 800
+PLAYER_WIDTH, PLAYER_HEIGHT = 40, 60
+PLAYER_VEL = 5
+STAR_WIDTH, STAR_HEIGHT = 10, 20
+STAR_VEL = 3
+BG_COLOR = (0, 0, 0)
+
+# Initialize Window
+WIN = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Space Dodge")
+
+# Load Background Image
+try:
+    BG = pygame.transform.scale(pygame.image.load("bg.jpeg"), (WIDTH, HEIGHT))
+except FileNotFoundError:
+    print("Background image not found. Ensure bg.jpeg is in the correct directory.")
+    BG = None  # Use a solid color if background is not found
+
+# Fonts
+FONT = pygame.font.SysFont("arialblack", 30)
+MENU_FONT = pygame.font.SysFont(None, 70)
+
+
+# Draw functions
+def draw_text(text, font, color, surface, x, y):
+    textobj = font.render(text, True, color)
+    textrect = textobj.get_rect(topleft=(x, y))
+    surface.blit(textobj, textrect)
+
+
+def draw(player, elapsed_time, stars, level, lives, score):
+    if BG:
+        WIN.blit(BG, (0, 0))
+    else:
+        WIN.fill(BG_COLOR)
+
+    time_text = FONT.render(f"TIME: {round(elapsed_time)}s", True, "white")
+    lives_label = FONT.render(f"LIVES: {lives}", True, (255, 255, 255))
+    level_label = FONT.render(f"LEVEL: {level}", True, (255, 255, 255))
+    score_label = FONT.render(f"SCORE: {score}", True, (255, 255, 255))
+
+    WIN.blit(time_text, (10, 10))
+    WIN.blit(lives_label, (10, 40))
+    WIN.blit(level_label, (850, 10))
+    WIN.blit(score_label, (10, 70))
+
+    pygame.draw.rect(WIN, "red", player)
+    for star in stars:
+        pygame.draw.rect(WIN, "white", star)
+
+    pygame.display.update()
+
+
+# Save score to JSON with unique username and create a CSV file 
+def save_score(score):
+    username = input("ENTER YOUR NAME: ")  # Generate a random username
+    player_scores = load_scores()  # Load existing scores
+    player_scores[username] = score  # Add new score
+    usernames = list(player_scores.keys())
+    scores = list(player_scores.values())
+    playerDF=pd.DataFrame({'Username':usernames, 'Score':scores})
+    playerDF.to_csv('gameCSV.csv')    
+    with open('scores.json', 'w') as f:
+        json.dump(player_scores, f)
+
+# Load scores from JSON
+def load_scores():
+    try:
+        with open('scores.json', 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+
+
+# Main Game Function
+def game():
+    run = True
+    level = 1
+    lives = 3
+    score = 0  # Initialize score
+    player = pygame.Rect(200, HEIGHT - PLAYER_HEIGHT, PLAYER_WIDTH, PLAYER_HEIGHT)
+    clock = pygame.time.Clock()
+    start_time = time.time()
+    elapsed_time = 0
+    star_add_increment = 2000
+    star_count = 0
+    stars = []
+
+    while run:
+        star_count += clock.tick(60)
+        elapsed_time = time.time() - start_time
+
+        if star_count > star_add_increment:
+            for _ in range(3):
+                star_x = random.randint(0, WIDTH - STAR_WIDTH)
+                star = pygame.Rect(star_x, -STAR_HEIGHT, STAR_WIDTH, STAR_HEIGHT)
+                stars.append(star)
+            star_add_increment = max(200, star_add_increment - 50)
+            star_count = 0
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                run = False
+                break
+
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_LEFT] and player.x - PLAYER_VEL >= 0:
+            player.x -= PLAYER_VEL
+        if keys[pygame.K_RIGHT] and player.x + PLAYER_VEL + player.width <= WIDTH:
+            player.x += PLAYER_VEL
+        if keys[pygame.K_UP] and player.y - PLAYER_VEL >= 0:
+            player.y -= PLAYER_VEL
+        if keys[pygame.K_DOWN] and player.y + PLAYER_VEL + player.height <= HEIGHT:
+            player.y += PLAYER_VEL
+
+        for star in stars[:]:
+            star.y += STAR_VEL
+            if star.y > HEIGHT:
+                stars.remove(star)
+                score += 1  # Increase score when dodged
+            elif star.colliderect(player):
+                stars.remove(star)
+                lives -= 1
+                if lives < 1:
+                    save_score(score)  # Save the score when game ends
+                    run = False
+                break
+
+        draw(player, elapsed_time, stars, level, lives, score)
+
+    lost_text = FONT.render("You Lost!", True, "white")
+    WIN.blit(lost_text, (WIDTH / 2 - lost_text.get_width() / 2, HEIGHT / 2 - lost_text.get_height() / 2))
+    pygame.display.update()
+    pygame.time.delay(3000)
+
+#Using CSV to create graph with dataframe
+
+def plot_scores(player_scores):
+    usernames = list(player_scores.keys())
+    scores = list(player_scores.values())
+    GraphDF=pd.read_csv('gameCSV.csv')
+    plt.figure(figsize=(10, 6))
+    plt.bar(GraphDF['Username'], GraphDF['Score'], color='lightcoral')
+    plt.xlabel('Players')
+    plt.ylabel('Scores')
+    plt.title('Player Scores')
+    plt.xticks(rotation=45)
+    plt.ylim(0, max(scores) + 10)  # Add some space above the highest bar
+    plt.grid(axis='y')
+
+    plt.show()
+
+
+# Main Menu Function
+def main_menu():
+    running = True
+    while running:
+        WIN.fill(BG_COLOR)
+        draw_text('MAIN MENU', MENU_FONT, (255, 255, 255), WIN, 50, 50)
+        draw_text('PLAY', MENU_FONT, (255, 255, 255), WIN, 185, 213)
+        draw_text('SCORE', MENU_FONT, (255, 255, 255), WIN, 165, 313)
+
+        mx, my = pygame.mouse.get_pos()
+        button_1 = pygame.Rect(150, 200, 200, 70)
+        button_2 = pygame.Rect(150, 300, 200, 70)
+
+        pygame.draw.rect(WIN, (255, 255, 255), button_1, 2)
+        pygame.draw.rect(WIN, (255, 255, 255), button_2, 2)
+
+        if button_1.collidepoint((mx, my)) and pygame.mouse.get_pressed()[0]:
+            game()
+        elif button_2.collidepoint((mx, my)) and pygame.mouse.get_pressed()[0]:
+            player_scores = load_scores()
+            if player_scores:
+                plot_scores(player_scores)
+            else:
+                print("No scores available to display.")
+                draw_text("No scores available.", FONT, (255, 255, 255), WIN, 150, 400)
+                pygame.display.update()
+                pygame.time.delay(2000)
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+                    pygame.quit()
+                    sys.exit()
+
+        pygame.display.update()
+        pygame.time.Clock().tick(60)
+
+# Run Main Menu
+main_menu()
